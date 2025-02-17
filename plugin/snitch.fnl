@@ -1,20 +1,24 @@
+; vim: set noexpandtab tabstop=2 shiftwidth=2 softtabstop=2 :
+
 (local call vim.fn)
+(local cmd vim.api.nvim_command)
 (local opt vim.opt)
 (local w vim.w)
 
 (fn execute-if-writable-buffer [procedure]
-	(local buftype (opt.buftype:get))
-	(when (or (= buftype "") (= buftype :acwrite))
-		(procedure)))
+	(let [buftype (opt.buftype:get)]
+		(when (or (= buftype "") (= buftype :acwrite))
+			(procedure))))
 
 (fn highlight-lines-excess []
-	(when (not= w.lines_excess_match_id nil)
-		(pcall #(call.matchdelete w.lines_excess_match_id)))
-	(execute-if-writable-buffer (fn []
-		(local textwidth (opt.textwidth:get))
-		(when (> textwidth 0)
-			(local regex (string.format "\\%%>%iv.\\+" textwidth))
-			(set w.lines_excess_match_id (call.matchadd :ColorColumn regex -1))))))
+	(when (not vim.b.Snitch_disable_lines_excess)
+		(when (not= w.lines_excess_match_id nil)
+			(pcall #(call.matchdelete w.lines_excess_match_id)))
+		(let [textwidth (opt.textwidth:get)
+					regex (string.format "\\%%>%iv.\\+" textwidth)]
+			(when (> textwidth 0)
+				(execute-if-writable-buffer
+					(fn [] (set w.lines_excess_match_id (call.matchadd :ColorColumn regex -1))))))))
 
 (local trailing-whitespace-regex (string.format
 	"[%s]\\+\\%%#\\@<!$"
@@ -47,32 +51,37 @@
 		:\ufeff] ""))) ; zero width non-breaking space
 
 (fn highlight-trailing-whitespace []
-	(when (not= w.trailing_whitespace_match_id nil)
-		(pcall #(call.matchdelete w.trailing_whitespace_match_id)))
-	(execute-if-writable-buffer (fn []
-		(set w.trailing_whitespace_match_id
-			(call.matchadd :ColorColumn trailing-whitespace-regex)))))
+	(when (not vim.b.Snitch_disable_trailing_whitespace)
+		(when (not= w.trailing_whitespace_match_id nil)
+			(pcall #(call.matchdelete w.trailing_whitespace_match_id)))
+		(execute-if-writable-buffer
+			(fn []
+				(set w.trailing_whitespace_match_id
+					(call.matchadd :ColorColumn trailing-whitespace-regex))))))
 
 (local spaces-indentation "^\\ \\ *")
 (local tabs-indentation "^\\t\\t*")
+(local either-indentation (.. spaces-indentation "\\|" tabs-indentation "\\zs\\ \\+"))
+
 (fn highlight-wrong-indentation []
-	(when (not= w.wrong_indentation_match_id nil)
-		(pcall #(call.matchdelete w.wrong_indentation_match_id)))
-	(execute-if-writable-buffer (fn []
-		(local wrong-indentation-regex
-			(if (opt.expandtab:get) tabs-indentation
-				(if (or (= (opt.softtabstop:get) 0) (= (opt.softtabstop:get) (opt.tabstop:get)))
-					(.. spaces-indentation "\\|" tabs-indentation "\\zs\\ \\+")
-					spaces-indentation)))
-		(set w.wrong_indentation_match_id
-			(call.matchadd :ColorColumn wrong-indentation-regex)))))
+	(when (not vim.b.Snitch_disable_wrong_indentation)
+		(when (not= w.wrong_indentation_match_id nil)
+			(pcall #(call.matchdelete w.wrong_indentation_match_id)))
+		(let [et (opt.expandtab:get)
+					sts (opt.softtabstop:get)
+					ts (opt.tabstop:get)
+					wrong-indentation (if et tabs-indentation
+															(or (= sts 0) (= sts ts)) either-indentation
+															spaces-indentation)]
+			(execute-if-writable-buffer
+				(fn []
+					(set w.wrong_indentation_match_id (call.matchadd :ColorColumn wrong-indentation)))))))
 
 (global Snitch {})
 (set Snitch.highlight_lines_excess highlight-lines-excess)
 (set Snitch.highlight_trailing_whitespace highlight-trailing-whitespace)
 (set Snitch.highlight_wrong_indentation highlight-wrong-indentation)
 
-(local cmd vim.api.nvim_command)
 (cmd "augroup SnitchSetup")
 (cmd "autocmd!")
 (cmd "autocmd BufEnter,BufRead,TermOpen * lua Snitch.highlight_lines_excess() Snitch.highlight_trailing_whitespace() Snitch.highlight_wrong_indentation()")
